@@ -30,6 +30,8 @@ class Jogador extends PositionComponent
   late ConfigSpritesheet _sheet;
 
   SpriteComponent? _sprite;
+
+  // Flags de teclas — armazenadas no estado do componente
   bool _indoEsquerda = false;
   bool _indoDireita = false;
   bool _puloSolicitado = false;
@@ -42,7 +44,6 @@ class Jogador extends PositionComponent
   bool pausado = false;
 
   /// Opacidade do sprite (0.0 = invisível, 1.0 = opaco).
-  /// Usado pelo FaseEscola para piscar ao levar dano.
   double opacidade = 1.0;
 
   @override
@@ -136,7 +137,14 @@ class Jogador extends PositionComponent
 
     final spriteComp = _sprite;
     if (spriteComp != null) {
-      spriteComp.scale.x = animacao.direcao == DirecaoJogador.esquerda ? -1 : 1;
+      // Espelha o sprite; corrige posição X para não sair do bounds
+      if (animacao.direcao == DirecaoJogador.esquerda) {
+        spriteComp.scale.x = -1;
+        spriteComp.position.x = size.x;
+      } else {
+        spriteComp.scale.x = 1;
+        spriteComp.position.x = 0;
+      }
     }
   }
 
@@ -144,6 +152,7 @@ class Jogador extends PositionComponent
   bool onKeyEvent(KeyEvent event, Set<LogicalKeyboardKey> keysPressed) {
     if (pausado) return false;
 
+    // Atualiza flags a partir de TODAS as teclas pressionadas agora
     _indoEsquerda =
         keysPressed.contains(LogicalKeyboardKey.arrowLeft) ||
         keysPressed.contains(LogicalKeyboardKey.keyA);
@@ -151,13 +160,27 @@ class Jogador extends PositionComponent
         keysPressed.contains(LogicalKeyboardKey.arrowRight) ||
         keysPressed.contains(LogicalKeyboardKey.keyD);
 
-    final pulou =
-        event is KeyDownEvent &&
-        (event.logicalKey == LogicalKeyboardKey.arrowUp ||
-            event.logicalKey == LogicalKeyboardKey.keyW ||
-            event.logicalKey == LogicalKeyboardKey.space);
-    if (pulou) {
-      _puloSolicitado = true;
+    // Pulo só no KeyDown para não repetir
+    if (event is KeyDownEvent) {
+      final ehPulo =
+          event.logicalKey == LogicalKeyboardKey.arrowUp ||
+          event.logicalKey == LogicalKeyboardKey.keyW ||
+          event.logicalKey == LogicalKeyboardKey.space;
+      if (ehPulo) {
+        _puloSolicitado = true;
+      }
+    }
+
+    // Limpa flags ao soltar teclas
+    if (event is KeyUpEvent) {
+      final ehEsquerda =
+          event.logicalKey == LogicalKeyboardKey.arrowLeft ||
+          event.logicalKey == LogicalKeyboardKey.keyA;
+      final ehDireita =
+          event.logicalKey == LogicalKeyboardKey.arrowRight ||
+          event.logicalKey == LogicalKeyboardKey.keyD;
+      if (ehEsquerda) _indoEsquerda = false;
+      if (ehDireita) _indoDireita = false;
     }
 
     return true;

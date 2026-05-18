@@ -52,14 +52,14 @@ class FaseEscola extends Component
   Porta? _portaAtiva;
   int _vidas = EscolaVisual.totalVidas;
   int _pontos = 0;
-  bool _invencivel = false; // pisca após levar dano
+  bool _invencivel = false;
   double _tempoInvencivel = 0;
   bool _encerrada = false;
   String? _feedbackMsg;
   double _tempoFeedback = 0;
 
-  static const _duracaoInvencivel = 2.0; // segundos de piscar
-  static const _duracaoFeedback = 2.5; // segundos mostrando mensagem
+  static const _duracaoInvencivel = 2.0;
+  static const _duracaoFeedback = 2.5;
   static const _pontoPorPorta = 100;
 
   @override
@@ -90,7 +90,6 @@ class FaseEscola extends Component
       final escala = h / image.height;
       final largImg = image.width * escala;
 
-      // Repete o fundo quantas vezes precisar para cobrir o mundo
       var x = 0.0;
       while (x < EscolaVisual.larguraMundo) {
         await add(
@@ -104,7 +103,6 @@ class FaseEscola extends Component
         x += largImg;
       }
     } catch (_) {
-      // fallback colorido
       await add(
         RectangleComponent(
           size: Vector2(EscolaVisual.larguraMundo, h * 0.6),
@@ -131,7 +129,6 @@ class FaseEscola extends Component
   }
 
   Future<void> _montarPortas(int seed) async {
-    // Embaralha desafios e pega 5
     final pool = List.of(poolDesafiosEscola);
     pool.shuffle(Random(seed));
     final selecionados = pool.take(5).toList();
@@ -150,7 +147,7 @@ class FaseEscola extends Component
     final posicoes = EscolaVisual.posicoesMesas(semente: seed);
     for (var i = 0; i < posicoes.length; i++) {
       final x = posicoes[i];
-      final qtd = (i % 3) + 1; // 1, 2 ou 3 mesas empilhadas
+      final qtd = (i % 3) + 1;
       for (var j = 0; j < qtd; j++) {
         final yPos = _topoChao - (EscolaVisual.alturaMesa * j);
         await add(ObjetoCenario.mesa(position: Vector2(x, yPos)));
@@ -161,7 +158,6 @@ class FaseEscola extends Component
   Future<void> _montarBuracos(int seed) async {
     final posicoes = EscolaVisual.posicoesBuracos(semente: seed);
     for (final x in posicoes) {
-      // Buraco no chão — jogador cai ao passar por cima
       final buraco = ObjetoCenario.buraco(position: Vector2(x, _topoChao));
       _buracos.add(buraco as ObjetoCenario);
       await add(buraco);
@@ -270,7 +266,6 @@ class FaseEscola extends Component
       return;
     }
 
-    // Período de invencibilidade para não perder duas vidas de uma vez
     _invencivel = true;
     _tempoInvencivel = 0;
   }
@@ -310,7 +305,11 @@ class FaseEscola extends Component
   @override
   void update(double dt) {
     super.update(dt);
-    if (_encerrada && _vidas > 0) return;
+
+    // CORRIGIDO: só sai cedo se encerrada E não há vidas (game over ativo).
+    // Antes o guard "if (_encerrada && _vidas > 0) return" pulava o update
+    // inteiro durante a vitória, impedindo o painel de fechar corretamente.
+    if (_encerrada) return;
 
     _jogador.pausado = _painel.aberto;
 
@@ -338,7 +337,6 @@ class FaseEscola extends Component
     for (final inimigo in _inimigos) {
       if (!inimigo.vivo) continue;
       if (inimigo.contemPonto(centroJogador)) {
-        // Pula em cima — derrota o inimigo
         final caindoEmCima =
             _jogador.velocidadeY > 0 &&
             _jogador.position.y + _jogador.size.y <
@@ -347,7 +345,6 @@ class FaseEscola extends Component
           inimigo.derrotar();
           _adicionarPontos(50);
           _mostrarFeedback('+50 pontos! 🎉');
-          // Pequeno pulo ao derrotar
           _jogador.velocidadeY = -300;
         } else {
           _levarDano();
@@ -355,7 +352,7 @@ class FaseEscola extends Component
       }
     }
 
-    // Colisão com buracos — perde uma vida e volta ao início
+    // Colisão com buracos
     for (final buraco in _buracos) {
       if (buraco.contemPonto(centroJogador)) {
         _levarDano();
@@ -368,7 +365,7 @@ class FaseEscola extends Component
       }
     }
 
-    // Interação automática ao chegar perto da porta (sem precisar apertar E)
+    // Interação automática com porta próxima
     final portaProxima = _portaProxima();
     if (portaProxima != null && !_painel.aberto) {
       _abrirDesafio(portaProxima);
@@ -410,7 +407,7 @@ class FaseEscola extends Component
   }
 
   // ─────────────────────────────────────────────
-  // Teclado — tecla E abre porta (alternativo ao automático)
+  // Teclado — tecla E abre porta
   // ─────────────────────────────────────────────
 
   @override

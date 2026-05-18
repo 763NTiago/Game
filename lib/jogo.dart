@@ -1,5 +1,5 @@
 import 'package:flame/game.dart';
-import 'package:flame/src/game/mixins/keyboard.dart';
+import 'package:flame/input.dart';
 import 'package:meu_jogo/jogador/personagem.dart';
 import 'package:meu_jogo/menu/menu.dart';
 import 'package:meu_jogo/mundo/escola/fase_escola.dart';
