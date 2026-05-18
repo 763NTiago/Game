@@ -8,10 +8,7 @@ import 'package:meu_jogo/mundo/escola/escola_visual.dart';
 
 /// Porta com sprite (porta.png) ou desenho provisório.
 class Porta extends PositionComponent with HasGameReference<FlameGame> {
-  Porta({
-    required this.desafio,
-    required this.onInteragir,
-  });
+  Porta({required this.desafio, required this.onInteragir});
 
   final DesafioConfig desafio;
   final void Function(Porta porta) onInteragir;
@@ -27,12 +24,13 @@ class Porta extends PositionComponent with HasGameReference<FlameGame> {
 
   Future<void> _montarSprite() async {
     _sprite?.removeFromParent();
-    final caminho =
-        concluida ? EscolaVisual.portaConcluida : EscolaVisual.porta;
+    final caminho = concluida
+        ? EscolaVisual.portaConcluida
+        : EscolaVisual.porta;
 
     try {
       final image = await game.images.load(caminho);
-      final alturaAlvo = 128.0;
+      final alturaAlvo = 320.0;
       final escala = alturaAlvo / image.height;
       size = Vector2(image.width * escala, alturaAlvo);
 

@@ -8,7 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:meu_jogo/jogador/jogador.dart';
 import 'package:meu_jogo/jogador/personagem.dart';
 import 'package:meu_jogo/mundo/chao.dart';
-import 'package:meu_jogo/mundo/escola/dados/desafios_escola.dart';
+import 'package:meu_jogo/mundo/escola/desafios_escola.dart';
 import 'package:meu_jogo/mundo/escola/escola_visual.dart';
 import 'package:meu_jogo/mundo/escola/inimigo.dart';
 import 'package:meu_jogo/mundo/escola/objeto_cenario.dart';
@@ -148,14 +148,20 @@ class FaseEscola extends Component
 
   Future<void> _montarMesas(int seed) async {
     final posicoes = EscolaVisual.posicoesMesas(semente: seed);
-    for (final x in posicoes) {
-      await add(ObjetoCenario.mesa(position: Vector2(x, _topoChao)));
+    for (var i = 0; i < posicoes.length; i++) {
+      final x = posicoes[i];
+      final qtd = (i % 3) + 1; // 1, 2 ou 3 mesas empilhadas
+      for (var j = 0; j < qtd; j++) {
+        final yPos = _topoChao - (EscolaVisual.alturaMesa * j);
+        await add(ObjetoCenario.mesa(position: Vector2(x, yPos)));
+      }
     }
   }
 
   Future<void> _montarBuracos(int seed) async {
     final posicoes = EscolaVisual.posicoesBuracos(semente: seed);
     for (final x in posicoes) {
+      // Buraco no chão — jogador cai ao passar por cima
       final buraco = ObjetoCenario.buraco(position: Vector2(x, _topoChao));
       _buracos.add(buraco as ObjetoCenario);
       await add(buraco);
@@ -311,10 +317,10 @@ class FaseEscola extends Component
     // Timer de invencibilidade — pisca o jogador
     if (_invencivel) {
       _tempoInvencivel += dt;
-      _jogador.opacity = (_tempoInvencivel * 8).floor().isEven ? 1.0 : 0.3;
+      _jogador.opacidade = (_tempoInvencivel * 8).floor().isEven ? 1.0 : 0.3;
       if (_tempoInvencivel >= _duracaoInvencivel) {
         _invencivel = false;
-        _jogador.opacity = 1.0;
+        _jogador.opacidade = 1.0;
       }
     }
 

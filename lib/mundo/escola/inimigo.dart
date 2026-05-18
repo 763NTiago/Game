@@ -1,4 +1,4 @@
-import 'dart:ui';
+import 'dart:ui' as ui;
 
 import 'package:flame/components.dart';
 import 'package:flame/game.dart';
@@ -26,7 +26,7 @@ class Inimigo extends PositionComponent with HasGameReference<FlameGame> {
 
   double _direcao = 1; // 1 = direita, -1 = esquerda
   SpriteComponent? _sprite;
-  late Image _image;
+  late ui.Image _image;
 
   // Animação simples: alterna entre frame 0 e 1 enquanto anda
   int _frameAtual = 0;

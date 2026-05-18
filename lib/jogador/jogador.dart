@@ -41,6 +41,10 @@ class Jogador extends PositionComponent
   /// Pausa movimento durante desafio / diálogo.
   bool pausado = false;
 
+  /// Opacidade do sprite (0.0 = invisível, 1.0 = opaco).
+  /// Usado pelo FaseEscola para piscar ao levar dano.
+  double opacidade = 1.0;
+
   @override
   Future<void> onLoad() async {
     await _carregarSkin(caminhoSkin);
@@ -81,6 +85,9 @@ class Jogador extends PositionComponent
       srcPosition: Vector2(origem.x, origem.y),
       srcSize: Vector2(_sheet.larguraFrame, _sheet.alturaFrame),
     );
+
+    // Aplica opacidade via cor do paint
+    spriteComp.paint.color = Color.fromRGBO(255, 255, 255, opacidade);
   }
 
   @override
@@ -129,8 +136,7 @@ class Jogador extends PositionComponent
 
     final spriteComp = _sprite;
     if (spriteComp != null) {
-      spriteComp.scale.x =
-          animacao.direcao == DirecaoJogador.esquerda ? -1 : 1;
+      spriteComp.scale.x = animacao.direcao == DirecaoJogador.esquerda ? -1 : 1;
     }
   }
 
@@ -138,12 +144,15 @@ class Jogador extends PositionComponent
   bool onKeyEvent(KeyEvent event, Set<LogicalKeyboardKey> keysPressed) {
     if (pausado) return false;
 
-    _indoEsquerda = keysPressed.contains(LogicalKeyboardKey.arrowLeft) ||
+    _indoEsquerda =
+        keysPressed.contains(LogicalKeyboardKey.arrowLeft) ||
         keysPressed.contains(LogicalKeyboardKey.keyA);
-    _indoDireita = keysPressed.contains(LogicalKeyboardKey.arrowRight) ||
+    _indoDireita =
+        keysPressed.contains(LogicalKeyboardKey.arrowRight) ||
         keysPressed.contains(LogicalKeyboardKey.keyD);
 
-    final pulou = event is KeyDownEvent &&
+    final pulou =
+        event is KeyDownEvent &&
         (event.logicalKey == LogicalKeyboardKey.arrowUp ||
             event.logicalKey == LogicalKeyboardKey.keyW ||
             event.logicalKey == LogicalKeyboardKey.space);

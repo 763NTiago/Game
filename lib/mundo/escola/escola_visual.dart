@@ -18,7 +18,7 @@ class EscolaVisual {
   // ─────────────────────────────────────────────
 
   /// Largura total do nível — 5 portas com espaço folgado entre elas.
-  static const double larguraMundo = 5000;
+  static const double larguraMundo = 12000;
 
   /// Altura padrão da tela (referência para calcular chão etc.).
   static const double alturaTela = 720;
@@ -44,17 +44,17 @@ class EscolaVisual {
 
   /// X do centro de cada porta no mundo.
   /// Espaçamento: ~800 px entre cada uma, início em 600 px.
-  static const List<double> portasPosicaoX = [600, 1400, 2200, 3000, 3800];
+  static const List<double> portasPosicaoX = [1500, 3500, 5500, 7500, 10000];
 
   /// Altura alvo da porta desenhada na tela (em px).
-  static const double alturaPorta = 160.0;
+  static const double alturaPorta = 320.0;
 
   // ─────────────────────────────────────────────
   // Jogador
   // ─────────────────────────────────────────────
 
   /// Onde o jogador aparece ao iniciar a fase.
-  static const double inicioJogadorX = 120;
+  static const double inicioJogadorX = 150;
 
   // ─────────────────────────────────────────────
   // Objetos aleatórios — geração procedural
@@ -62,7 +62,7 @@ class EscolaVisual {
 
   /// Gera posições X aleatórias para [quantidade] mesas,
   /// evitando as regiões próximas às portas e ao início.
-  static List<double> posicoesMesas({int quantidade = 6, int semente = 0}) {
+  static List<double> posicoesMesas({int quantidade = 12, int semente = 0}) {
     return _posicoesSemConflito(
       quantidade: quantidade,
       semente: semente + 1,
@@ -71,7 +71,7 @@ class EscolaVisual {
   }
 
   /// Gera posições X aleatórias para [quantidade] inimigos.
-  static List<double> posicoesInimigos({int quantidade = 4, int semente = 0}) {
+  static List<double> posicoesInimigos({int quantidade = 10, int semente = 0}) {
     return _posicoesSemConflito(
       quantidade: quantidade,
       semente: semente + 2,
@@ -80,7 +80,7 @@ class EscolaVisual {
   }
 
   /// Gera posições X aleatórias para [quantidade] buracos.
-  static List<double> posicoesBuracos({int quantidade = 3, int semente = 0}) {
+  static List<double> posicoesBuracos({int quantidade = 7, int semente = 0}) {
     return _posicoesSemConflito(
       quantidade: quantidade,
       semente: semente + 3,
@@ -153,8 +153,8 @@ class EscolaVisual {
     final resultado = <double>[];
 
     // Zonas proibidas: início + entorno de cada porta
-    const margemPorta = 220.0; // px livres ao redor de cada porta
-    const margemInicio = 300.0; // px livres no começo
+    const margemPorta = 300.0; // px livres ao redor de cada porta
+    const margemInicio = 600.0; // px livres no começo
 
     bool conflita(double x) {
       if (x < margemInicio) return true;
