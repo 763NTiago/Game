@@ -4,5 +4,14 @@ import 'package:meu_jogo/jogo.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(GameWidget(game: JogoCasa()));
+  runApp(
+    MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        backgroundColor: Colors.black,
+        // Força o GameWidget a se expandir por toda a tela disponível
+        body: SizedBox.expand(child: GameWidget(game: JogoCasa())),
+      ),
+    ),
+  );
 }

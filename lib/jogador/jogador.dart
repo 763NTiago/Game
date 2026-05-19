@@ -7,9 +7,10 @@ import 'package:meu_jogo/config/config_display.dart';
 import 'package:meu_jogo/jogador/animacao.dart';
 import 'package:meu_jogo/mundo/chao.dart';
 
-/// Personagem: física, animação pela matriz e colisão com o chão.
-class Jogador extends PositionComponent
-    with KeyboardHandler, HasGameReference<FlameGame> {
+/// Personagem jogavel.
+/// Usa HardwareKeyboard.instance para polling de teclas — funciona mesmo
+/// quando o componente vive dentro de game.world (nao precisa de KeyboardHandler).
+class Jogador extends PositionComponent with HasGameReference<FlameGame> {
   Jogador({
     required this.caminhoSkin,
     required this.chao,
@@ -28,32 +29,29 @@ class Jogador extends PositionComponent
 
   late ControladorAnimacao animacao;
   late ConfigSpritesheet _sheet;
-
   SpriteComponent? _sprite;
 
-  // Flags de teclas — armazenadas no estado do componente
-  bool _indoEsquerda = false;
-  bool _indoDireita = false;
-  bool _puloSolicitado = false;
-
+  // Fisica
   double velocidadeX = 0;
   double velocidadeY = 0;
   bool noChao = false;
 
-  /// Pausa movimento durante desafio / diálogo.
+  // Controle externo
   bool pausado = false;
-
-  /// Opacidade do sprite (0.0 = invisível, 1.0 = opaco).
   double opacidade = 1.0;
+
+  // Estado interno de pulo — evita pulo continuo ao segurar a tecla
+  bool _puloAtivo = false;
 
   @override
   Future<void> onLoad() async {
+    anchor = Anchor.topLeft;
     await _carregarSkin(caminhoSkin);
-    position = Vector2(80, chao.topo - size.y);
   }
 
   Future<void> _carregarSkin(String caminho) async {
     _sprite?.removeFromParent();
+    _sprite = null;
 
     final image = await game.images.load(caminho);
     _sheet = ConfigSpritesheet.daImagem(image);
@@ -63,32 +61,18 @@ class Jogador extends PositionComponent
     size = tamanhoFrame * ConfigDisplay.escalaPersonagem;
 
     final origem = _sheet.origemDoFrame(animacao.indiceFrameAtual);
-    _sprite = SpriteComponent(
+    final sprite = SpriteComponent(
       sprite: Sprite(
         image,
         srcPosition: Vector2(origem.x, origem.y),
         srcSize: tamanhoFrame,
       ),
       size: size,
+      anchor: Anchor.topLeft,
     )..paint.filterQuality = FilterQuality.none;
 
-    add(_sprite!);
-  }
-
-  void _atualizarSprite() {
-    final spriteComp = _sprite;
-    if (spriteComp == null) return;
-
-    final origem = _sheet.origemDoFrame(animacao.indiceFrameAtual);
-    final image = spriteComp.sprite!.image;
-    spriteComp.sprite = Sprite(
-      image,
-      srcPosition: Vector2(origem.x, origem.y),
-      srcSize: Vector2(_sheet.larguraFrame, _sheet.alturaFrame),
-    );
-
-    // Aplica opacidade via cor do paint
-    spriteComp.paint.color = Color.fromRGBO(255, 255, 255, opacidade);
+    _sprite = sprite;
+    add(sprite);
   }
 
   @override
@@ -96,20 +80,39 @@ class Jogador extends PositionComponent
     super.update(dt);
     if (pausado) return;
 
-    velocidadeX = 0;
-    if (_indoEsquerda) velocidadeX -= velocidadeAndar;
-    if (_indoDireita) velocidadeX += velocidadeAndar;
+    // ── Polling de teclado via HardwareKeyboard ──
+    final hw = HardwareKeyboard.instance;
 
-    if (_puloSolicitado && noChao) {
+    final esquerda =
+        hw.isLogicalKeyPressed(LogicalKeyboardKey.arrowLeft) ||
+        hw.isLogicalKeyPressed(LogicalKeyboardKey.keyA);
+    final direita =
+        hw.isLogicalKeyPressed(LogicalKeyboardKey.arrowRight) ||
+        hw.isLogicalKeyPressed(LogicalKeyboardKey.keyD);
+    final querPular =
+        hw.isLogicalKeyPressed(LogicalKeyboardKey.arrowUp) ||
+        hw.isLogicalKeyPressed(LogicalKeyboardKey.keyW) ||
+        hw.isLogicalKeyPressed(LogicalKeyboardKey.space);
+
+    // ── Velocidade horizontal ──
+    velocidadeX = 0;
+    if (esquerda) velocidadeX -= velocidadeAndar;
+    if (direita) velocidadeX += velocidadeAndar;
+
+    // ── Pulo — so dispara na borda de subida da tecla ──
+    if (querPular && noChao && !_puloAtivo) {
       velocidadeY = -forcaPulo;
       noChao = false;
+      _puloAtivo = true;
     }
-    _puloSolicitado = false;
+    if (!querPular) _puloAtivo = false;
 
+    // ── Gravidade + movimento ──
     velocidadeY += gravidade * dt;
     position.x += velocidadeX * dt;
     position.y += velocidadeY * dt;
 
+    // ── Colisao com o chao ──
     final peNoChao = chao.topo - size.y;
     if (position.y >= peNoChao) {
       position.y = peNoChao;
@@ -119,70 +122,46 @@ class Jogador extends PositionComponent
       noChao = false;
     }
 
-    final limiteX = limiteMundoX ?? game.size.x;
-    position.x = position.x.clamp(0, limiteX - size.x);
+    // ── Limites horizontais ──
+    final limX = limiteMundoX ?? game.size.x;
+    position.x = position.x.clamp(0, limX - size.x);
 
+    // ── Direcao ──
     final seMovendo = velocidadeX.abs() > 1;
-    if (seMovendo) {
-      animacao.definirDirecao(velocidadeX > 0);
-    }
+    if (seMovendo) animacao.definirDirecao(velocidadeX > 0);
 
+    // ── Estado de animacao ──
     final estado = estadoAPartirDaFisica(
       noChao: noChao,
       velocidadeY: velocidadeY,
       seMovendoHorizontalmente: seMovendo,
     );
     animacao.atualizar(dt, estado);
-    _atualizarSprite();
 
-    final spriteComp = _sprite;
-    if (spriteComp != null) {
-      // Espelha o sprite; corrige posição X para não sair do bounds
-      if (animacao.direcao == DirecaoJogador.esquerda) {
-        spriteComp.scale.x = -1;
-        spriteComp.position.x = size.x;
-      } else {
-        spriteComp.scale.x = 1;
-        spriteComp.position.x = 0;
-      }
-    }
+    _atualizarSprite();
   }
 
-  @override
-  bool onKeyEvent(KeyEvent event, Set<LogicalKeyboardKey> keysPressed) {
-    if (pausado) return false;
+  void _atualizarSprite() {
+    final s = _sprite;
+    if (s == null) return;
 
-    // Atualiza flags a partir de TODAS as teclas pressionadas agora
-    _indoEsquerda =
-        keysPressed.contains(LogicalKeyboardKey.arrowLeft) ||
-        keysPressed.contains(LogicalKeyboardKey.keyA);
-    _indoDireita =
-        keysPressed.contains(LogicalKeyboardKey.arrowRight) ||
-        keysPressed.contains(LogicalKeyboardKey.keyD);
+    final origem = _sheet.origemDoFrame(animacao.indiceFrameAtual);
+    s.sprite = Sprite(
+      s.sprite!.image,
+      srcPosition: Vector2(origem.x, origem.y),
+      srcSize: Vector2(_sheet.larguraFrame, _sheet.alturaFrame),
+    );
 
-    // Pulo só no KeyDown para não repetir
-    if (event is KeyDownEvent) {
-      final ehPulo =
-          event.logicalKey == LogicalKeyboardKey.arrowUp ||
-          event.logicalKey == LogicalKeyboardKey.keyW ||
-          event.logicalKey == LogicalKeyboardKey.space;
-      if (ehPulo) {
-        _puloSolicitado = true;
-      }
+    s.paint.color = Color.fromRGBO(255, 255, 255, opacidade.clamp(0.0, 1.0));
+
+    // Flip horizontal correto
+    if (animacao.direcao == DirecaoJogador.esquerda) {
+      s.scale.x = -1;
+      s.position.x = size.x;
+    } else {
+      s.scale.x = 1;
+      s.position.x = 0;
     }
-
-    // Limpa flags ao soltar teclas
-    if (event is KeyUpEvent) {
-      final ehEsquerda =
-          event.logicalKey == LogicalKeyboardKey.arrowLeft ||
-          event.logicalKey == LogicalKeyboardKey.keyA;
-      final ehDireita =
-          event.logicalKey == LogicalKeyboardKey.arrowRight ||
-          event.logicalKey == LogicalKeyboardKey.keyD;
-      if (ehEsquerda) _indoEsquerda = false;
-      if (ehDireita) _indoDireita = false;
-    }
-
-    return true;
+    s.position.y = 0;
   }
 }
