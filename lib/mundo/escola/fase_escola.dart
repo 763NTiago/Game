@@ -19,8 +19,20 @@ class FaseEscola extends Component
   late Jogador _jogador;
   late Chao _chao;
 
+  // ── Dead zone ──────────────────────────────────────────────────────────────
+  // A câmera só se move quando o jogador sai dos 50% centrais da tela.
+  // Cada borda da dead zone fica a 25% da largura da viewport.
+  //
+  //   |←── 25% ──|←────── 50% dead zone ──────→|── 25% ──→|
+  //              ↑                               ↑
+  //         _deadLeft                       _deadRight  (em coords do mundo)
+  //
+  // _cameraX é a borda esquerda do que a câmera mostra no mundo.
+  double _cameraX = 0;
+
   World get _world => game.world;
 
+  // ─────────────────────────────────────────────────────────────────────────
   @override
   Future<void> onLoad() async {
     await _montarFundo();
@@ -29,30 +41,44 @@ class FaseEscola extends Component
     _configurarCamera();
   }
 
+  // ── Fundo ──────────────────────────────────────────────────────────────────
   Future<void> _montarFundo() async {
+    final screenW = game.size.x;
     final screenH = game.size.y;
 
     try {
       final image = await game.images.load(EscolaVisual.fundo);
 
-      // Escala estritamente pela altura para sumir com o fundo preto inferior
+      // Escala pela ALTURA para preencher verticalmente sem deixar barra preta.
       final escala = screenH / image.height;
       final largImg = image.width * escala;
-      final altImg = screenH;
 
+      // Garante que ao menos uma tile ocupe a largura inteira da tela.
+      // Se a imagem escalada for mais estreita que a tela, aumenta a escala.
+      final escalaFinal = largImg < screenW
+          ? screenW /
+                image
+                    .width // estica para cobrir a largura mínima
+          : escala;
+
+      final largFinal = image.width * escalaFinal;
+      final altFinal = image.height * escalaFinal;
+
+      // Tileamos horizontalmente pelo mundo todo. Começa em Y=0 (topo da tela).
       var x = 0.0;
       while (x < EscolaVisual.larguraMundo) {
         await _world.add(
           SpriteComponent(
             sprite: Sprite(image),
-            size: Vector2(largImg, altImg),
-            position: Vector2(x, 0), // Perfeitamente colado no topo e base
+            size: Vector2(largFinal, altFinal),
+            position: Vector2(x, 0),
             anchor: Anchor.topLeft,
           )..paint.filterQuality = FilterQuality.none,
         );
-        x += largImg;
+        x += largFinal;
       }
     } catch (_) {
+      // Fallback: retângulo colorido cobrindo mundo inteiro.
       await _world.add(
         RectangleComponent(
           size: Vector2(EscolaVisual.larguraMundo, screenH),
@@ -62,8 +88,9 @@ class FaseEscola extends Component
     }
   }
 
+  // ── Chão ───────────────────────────────────────────────────────────────────
   Future<void> _montarChao() async {
-    // 0.98 faz o pé do jogador ficar exatamente na linha limite inferior do visual da imagem
+    // 0.98 → pé do jogador exatamente na linha limite inferior do visual.
     final topoChao = game.size.y * 0.98;
     final alturaChao = game.size.y - topoChao;
 
@@ -75,6 +102,7 @@ class FaseEscola extends Component
     await _world.add(_chao);
   }
 
+  // ── Jogador ────────────────────────────────────────────────────────────────
   Future<void> _montarJogador() async {
     _jogador = Jogador(
       caminhoSkin: personagem.caminhoSkin,
@@ -83,26 +111,76 @@ class FaseEscola extends Component
     );
     await _world.add(_jogador);
 
-    // Inicia bem no canto esquerdo da tela (X = 10) e em cima do chão inferior
+    // Inicia no canto esquerdo, em cima do chão.
     _jogador.position = Vector2(10.0, _chao.topo - _jogador.size.y);
   }
 
+  // ── Câmera (configuração inicial) ─────────────────────────────────────────
   void _configurarCamera() {
+    // Âncora no CENTRO da viewport — padrão correto do Flame.
+    // Não usamos viewfinder.anchor deslocado, pois isso causava o canto preto
+    // da esquerda ao mostrar espaço "antes" do X=0 do mundo.
     game.camera.viewfinder.zoom = 1.0;
+    game.camera.viewfinder.anchor = Anchor.center;
 
-    // Alinha o ponto focal da câmera no lado esquerdo da sua própria lente
-    // Isso impede que a câmera tente centralizar o jogador logo no começo da fase
-    game.camera.viewfinder.anchor = const Anchor(0.25, 0.5);
+    // Posicionamos a câmera manualmente para que o jogador apareça no lado
+    // esquerdo da dead zone logo no início (sem revelar espaço negativo).
+    _cameraX = 0; // começa colada na borda esquerda do mundo
+    _aplicarCamera();
 
-    // Segue o jogador
-    game.camera.follow(_jogador);
-
-    // Prende os limites rígidos da câmera nas extremidades do mundo
+    // Limites rígidos: câmera não pode mostrar fora do mundo.
     game.camera.setBounds(
       Rectangle.fromLTWH(0, 0, EscolaVisual.larguraMundo, game.size.y),
     );
+
+    // Desliga o follow automático — vamos controlar manualmente no update().
+    game.camera.stop();
   }
 
+  // ── Dead zone — atualiza câmera a cada frame ───────────────────────────────
+  @override
+  void update(double dt) {
+    super.update(dt);
+
+    final screenW = game.size.x;
+
+    // Limites da dead zone em coordenadas de TELA (relativo a _cameraX).
+    // 25% da esquerda → começa a mover a câmera para a esquerda
+    // 25% da direita  → começa a mover a câmera para a direita
+    final deadLeft = _cameraX + screenW * 0.25;
+    final deadRight = _cameraX + screenW * 0.75;
+
+    // Centro do jogador no eixo X (dentro do mundo).
+    final jogadorCX = _jogador.position.x + _jogador.size.x / 2;
+
+    if (jogadorCX < deadLeft) {
+      // Jogador cruzou a borda esquerda da dead zone → puxa câmera para esquerda.
+      _cameraX = jogadorCX - screenW * 0.25;
+    } else if (jogadorCX > deadRight) {
+      // Jogador cruzou a borda direita da dead zone → empurra câmera para direita.
+      _cameraX = jogadorCX - screenW * 0.75;
+    }
+
+    // Clamp: não deixa mostrar além das bordas do mundo.
+    _cameraX = _cameraX.clamp(0, EscolaVisual.larguraMundo - screenW);
+
+    _aplicarCamera();
+  }
+
+  /// Aplica _cameraX ao viewfinder (sem usar follow/snap do Flame).
+  void _aplicarCamera() {
+    final screenW = game.size.x;
+    final screenH = game.size.y;
+
+    // O viewfinder.position é o ponto do MUNDO que aparece no centro da tela
+    // (porque viewfinder.anchor = Anchor.center).
+    game.camera.viewfinder.position = Vector2(
+      _cameraX + screenW / 2,
+      screenH / 2,
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   @override
   void onRemove() {
     super.onRemove();
