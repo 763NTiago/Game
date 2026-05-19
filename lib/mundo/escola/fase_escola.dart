@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flame/components.dart';
 import 'package:flame/experimental.dart';
 import 'package:flame/game.dart';
@@ -6,190 +8,368 @@ import 'package:flutter/services.dart';
 import 'package:meu_jogo/jogador/jogador.dart';
 import 'package:meu_jogo/jogador/personagem.dart';
 import 'package:meu_jogo/mundo/chao.dart';
+import 'package:meu_jogo/mundo/escola/desafio_config.dart';
+import 'package:meu_jogo/mundo/escola/desafios_escola.dart';
 import 'package:meu_jogo/mundo/escola/escola_visual.dart';
+import 'package:meu_jogo/mundo/escola/painel_desafio.dart';
+import 'package:meu_jogo/mundo/escola/porta.dart';
 
+/// Fase principal da escola.
+///
+/// Estrutura do mundo (por seção 0‥4):
+///   8 tiles do fundoN.png  →  porta com desafio (porta 5 = vitória direta)
+///
+/// Câmera: dead zone 30 % borda esquerda / 40 % borda direita da viewport.
 class FaseEscola extends Component
     with HasGameReference<FlameGame>, KeyboardHandler {
-  FaseEscola({required this.personagem, this.onGameOver, this.onConcluida});
+  FaseEscola({
+    required this.personagem,
+    this.onGameOver,
+    this.onConcluida,
+    this.onMenu,
+  });
 
   final Personagem personagem;
   final void Function(int pontos)? onGameOver;
   final void Function(int pontos)? onConcluida;
+  final void Function()? onMenu;
 
   late Jogador _jogador;
   late Chao _chao;
+  late PainelDesafio _painel;
 
-  // ── Dead zone ──────────────────────────────────────────────────────────────
-  // A câmera só se move quando o jogador sai dos 50% centrais da tela.
-  // Cada borda da dead zone fica a 25% da largura da viewport.
-  //
-  //   |←── 25% ──|←────── 50% dead zone ──────→|── 25% ──→|
-  //              ↑                               ↑
-  //         _deadLeft                       _deadRight  (em coords do mundo)
-  //
-  // _cameraX é a borda esquerda do que a câmera mostra no mundo.
+  double _larguraTile = EscolaVisual.larguraTileRef;
+
+  final List<Porta> _portas = [];
+  int _portasResolvidas = 0;
+
+  late List<DesafioConfig> _desafiosSorteados;
+
   double _cameraX = 0;
+  int _pontos = 0;
+  int _vidas = EscolaVisual.totalVidas;
+  bool _desafioAberto = false;
 
   World get _world => game.world;
 
   // ─────────────────────────────────────────────────────────────────────────
+  // Carregamento
+  // ─────────────────────────────────────────────────────────────────────────
+
   @override
   Future<void> onLoad() async {
+    _sortearDesafios();
     await _montarFundo();
     await _montarChao();
+    await _montarPortas();
     await _montarJogador();
+    await _montarPainel();
     _configurarCamera();
   }
 
-  // ── Fundo ──────────────────────────────────────────────────────────────────
+  void _sortearDesafios() {
+    final pool = List<DesafioConfig>.from(poolDesafiosEscola)..shuffle();
+    _desafiosSorteados = pool
+        .take(EscolaVisual.totalPortas)
+        .toList()
+        .asMap()
+        .entries
+        .map((e) => e.value.copyWith(porta: e.key + 1))
+        .toList();
+  }
+
+  // ── Fundo ─────────────────────────────────────────────────────────────────
+  // Para cada seção coloca 8 tiles do fundoN + 1 tile cobrindo o espaço da porta.
+  // A largura real do tile é calculada da primeira imagem carregada.
+
   Future<void> _montarFundo() async {
-    final screenW = game.size.x;
     final screenH = game.size.y;
+    final screenW = game.size.x;
+    final Map<String, ui.Image> cache = {};
 
-    try {
-      final image = await game.images.load(EscolaVisual.fundo);
+    for (var secao = 0; secao < EscolaVisual.totalPortas; secao++) {
+      final caminho = EscolaVisual.fundoDaSecao(secao);
 
-      // Escala pela ALTURA para preencher verticalmente sem deixar barra preta.
-      final escala = screenH / image.height;
-      final largImg = image.width * escala;
+      ui.Image? img;
+      try {
+        img = cache[caminho] ?? await game.images.load(caminho);
+        cache[caminho] = img!;
+      } catch (_) {}
 
-      // Garante que ao menos uma tile ocupe a largura inteira da tela.
-      // Se a imagem escalada for mais estreita que a tela, aumenta a escala.
-      final escalaFinal = largImg < screenW
-          ? screenW /
-                image
-                    .width // estica para cobrir a largura mínima
-          : escala;
+      // Calcula escala e tamanho do tile
+      double largTile;
+      double altTile;
+      Sprite? sprite;
 
-      final largFinal = image.width * escalaFinal;
-      final altFinal = image.height * escalaFinal;
+      if (img != null) {
+        final escalaH = screenH / img.height;
+        largTile = img.width * escalaH;
+        if (largTile < screenW) largTile = screenW.toDouble();
+        altTile = screenH;
+        sprite = Sprite(img);
+      } else {
+        largTile = screenW;
+        altTile = screenH;
+      }
 
-      // Tileamos horizontalmente pelo mundo todo. Começa em Y=0 (topo da tela).
-      var x = 0.0;
-      while (x < EscolaVisual.larguraMundo) {
+      if (secao == 0) _larguraTile = largTile;
+
+      final xSecaoInicio =
+          secao *
+          (EscolaVisual.tilesPorSecao * _larguraTile +
+              EscolaVisual.espacoPorta);
+
+      // 8 tiles de fundo
+      for (var t = 0; t < EscolaVisual.tilesPorSecao; t++) {
+        final xTile = xSecaoInicio + t * _larguraTile;
+        if (sprite != null) {
+          await _world.add(
+            SpriteComponent(
+              sprite: sprite,
+              size: Vector2(_larguraTile, altTile),
+              position: Vector2(xTile, 0),
+              anchor: Anchor.topLeft,
+            )..paint.filterQuality = FilterQuality.none,
+          );
+        } else {
+          await _world.add(
+            RectangleComponent(
+              position: Vector2(xTile, 0),
+              size: Vector2(_larguraTile, altTile),
+              paint: Paint()
+                ..color = const Color(EscolaVisual.corFundoFallback),
+            ),
+          );
+        }
+      }
+
+      // Tile cobrindo o espaço da porta (repete o fundo)
+      final xPortaArea =
+          xSecaoInicio + EscolaVisual.tilesPorSecao * _larguraTile;
+      if (sprite != null) {
         await _world.add(
           SpriteComponent(
-            sprite: Sprite(image),
-            size: Vector2(largFinal, altFinal),
-            position: Vector2(x, 0),
+            sprite: sprite,
+            size: Vector2(EscolaVisual.espacoPorta, altTile),
+            position: Vector2(xPortaArea, 0),
             anchor: Anchor.topLeft,
           )..paint.filterQuality = FilterQuality.none,
         );
-        x += largFinal;
+      } else {
+        await _world.add(
+          RectangleComponent(
+            position: Vector2(xPortaArea, 0),
+            size: Vector2(EscolaVisual.espacoPorta, altTile),
+            paint: Paint()..color = const Color(EscolaVisual.corFundoFallback),
+          ),
+        );
       }
-    } catch (_) {
-      // Fallback: retângulo colorido cobrindo mundo inteiro.
-      await _world.add(
-        RectangleComponent(
-          size: Vector2(EscolaVisual.larguraMundo, screenH),
-          paint: Paint()..color = const Color(EscolaVisual.corFundoFallback),
-        ),
-      );
     }
   }
 
-  // ── Chão ───────────────────────────────────────────────────────────────────
+  // ── Chão ──────────────────────────────────────────────────────────────────
+
   Future<void> _montarChao() async {
-    // 0.98 → pé do jogador exatamente na linha limite inferior do visual.
-    final topoChao = game.size.y * 0.98;
+    final topoChao = game.size.y * 0.88;
     final alturaChao = game.size.y - topoChao;
 
     _chao = Chao(
       altura: alturaChao,
-      largura: EscolaVisual.larguraMundo,
+      largura: EscolaVisual.larguraMundo(larguraTile: _larguraTile),
       topoY: topoChao,
     );
     await _world.add(_chao);
   }
 
-  // ── Jogador ────────────────────────────────────────────────────────────────
+  // ── Portas ────────────────────────────────────────────────────────────────
+
+  Future<void> _montarPortas() async {
+    for (var i = 0; i < EscolaVisual.totalPortas; i++) {
+      final xCentro = EscolaVisual.xPorta(i, larguraTile: _larguraTile);
+      final desafio = _desafiosSorteados[i];
+
+      final porta = Porta(desafio: desafio, onInteragir: _aoInteragirComPorta);
+      porta.position = Vector2(xCentro, _chao.topo);
+      _portas.add(porta);
+      await _world.add(porta);
+    }
+  }
+
+  // ── Jogador ───────────────────────────────────────────────────────────────
+
   Future<void> _montarJogador() async {
     _jogador = Jogador(
       caminhoSkin: personagem.caminhoSkin,
       chao: _chao,
-      limiteMundoX: EscolaVisual.larguraMundo,
+      limiteMundoX: EscolaVisual.larguraMundo(larguraTile: _larguraTile),
     );
     await _world.add(_jogador);
-
-    // Inicia no canto esquerdo, em cima do chão.
-    _jogador.position = Vector2(10.0, _chao.topo - _jogador.size.y);
+    _jogador.position = Vector2(
+      EscolaVisual.inicioJogadorX,
+      _chao.topo - _jogador.size.y,
+    );
   }
 
-  // ── Câmera (configuração inicial) ─────────────────────────────────────────
+  // ── Painel ────────────────────────────────────────────────────────────────
+
+  Future<void> _montarPainel() async {
+    _painel = PainelDesafio(onResposta: _aoResponder);
+    await game.add(_painel);
+  }
+
+  // ── Câmera ────────────────────────────────────────────────────────────────
+
   void _configurarCamera() {
-    // Âncora no CENTRO da viewport — padrão correto do Flame.
-    // Não usamos viewfinder.anchor deslocado, pois isso causava o canto preto
-    // da esquerda ao mostrar espaço "antes" do X=0 do mundo.
     game.camera.viewfinder.zoom = 1.0;
     game.camera.viewfinder.anchor = Anchor.center;
-
-    // Posicionamos a câmera manualmente para que o jogador apareça no lado
-    // esquerdo da dead zone logo no início (sem revelar espaço negativo).
-    _cameraX = 0; // começa colada na borda esquerda do mundo
+    _cameraX = 0;
     _aplicarCamera();
-
-    // Limites rígidos: câmera não pode mostrar fora do mundo.
     game.camera.setBounds(
-      Rectangle.fromLTWH(0, 0, EscolaVisual.larguraMundo, game.size.y),
+      Rectangle.fromLTWH(
+        0,
+        0,
+        EscolaVisual.larguraMundo(larguraTile: _larguraTile),
+        game.size.y,
+      ),
     );
-
-    // Desliga o follow automático — vamos controlar manualmente no update().
     game.camera.stop();
   }
 
-  // ── Dead zone — atualiza câmera a cada frame ───────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // Update
+  // ─────────────────────────────────────────────────────────────────────────
+
   @override
   void update(double dt) {
     super.update(dt);
+    _jogador.pausado = _desafioAberto;
+    if (_desafioAberto) return;
+    _verificarColisaoPortas();
+    _atualizarCamera();
+  }
 
-    final screenW = game.size.x;
+  // ── Colisão com portas ────────────────────────────────────────────────────
 
-    // Limites da dead zone em coordenadas de TELA (relativo a _cameraX).
-    // 25% da esquerda → começa a mover a câmera para a esquerda
-    // 25% da direita  → começa a mover a câmera para a direita
-    final deadLeft = _cameraX + screenW * 0.25;
-    final deadRight = _cameraX + screenW * 0.75;
+  void _verificarColisaoPortas() {
+    final centro = _jogador.absoluteCenter;
+    for (final porta in _portas) {
+      if (!porta.concluida && porta.contemJogador(centro)) {
+        _aoInteragirComPorta(porta);
+        break;
+      }
+    }
+  }
 
-    // Centro do jogador no eixo X (dentro do mundo).
-    final jogadorCX = _jogador.position.x + _jogador.size.x / 2;
+  void _aoInteragirComPorta(Porta porta) {
+    if (_desafioAberto || porta.concluida) return;
+    final indice = _portas.indexOf(porta);
 
-    if (jogadorCX < deadLeft) {
-      // Jogador cruzou a borda esquerda da dead zone → puxa câmera para esquerda.
-      _cameraX = jogadorCX - screenW * 0.25;
-    } else if (jogadorCX > deadRight) {
-      // Jogador cruzou a borda direita da dead zone → empurra câmera para direita.
-      _cameraX = jogadorCX - screenW * 0.75;
+    // Última porta → vitória direta
+    if (indice == EscolaVisual.totalPortas - 1) {
+      porta.marcarConcluida();
+      _portasResolvidas++;
+      _pontos += 100;
+      Future.delayed(const Duration(milliseconds: 600), () {
+        onConcluida?.call(_pontos);
+      });
+      return;
     }
 
-    // Clamp: não deixa mostrar além das bordas do mundo.
-    _cameraX = _cameraX.clamp(0, EscolaVisual.larguraMundo - screenW);
+    _desafioAberto = true;
+    _painel.abrir(_desafiosSorteados[indice]);
+  }
 
+  // ── Resposta do desafio ───────────────────────────────────────────────────
+
+  void _aoResponder(bool acertou) {
+    _desafioAberto = false;
+
+    // Porta mais próxima não-concluída
+    final centro = _jogador.absoluteCenter;
+    Porta? alvo;
+    double menor = double.infinity;
+    for (final p in _portas) {
+      if (p.concluida) continue;
+      final d = (p.absoluteCenter.x - centro.x).abs();
+      if (d < menor) {
+        menor = d;
+        alvo = p;
+      }
+    }
+
+    if (acertou) {
+      alvo?.marcarConcluida();
+      _portasResolvidas++;
+      _pontos += 100;
+
+      if (_portasResolvidas >= EscolaVisual.totalPortas) {
+        Future.delayed(const Duration(milliseconds: 800), () {
+          onConcluida?.call(_pontos);
+        });
+      }
+    } else {
+      _vidas--;
+      if (_vidas <= 0) {
+        Future.delayed(const Duration(milliseconds: 400), () {
+          onGameOver?.call(_pontos);
+        });
+      }
+    }
+  }
+
+  // ── Dead zone 30 % / 40 % ────────────────────────────────────────────────
+
+  void _atualizarCamera() {
+    final screenW = game.size.x;
+    final mundo = EscolaVisual.larguraMundo(larguraTile: _larguraTile);
+
+    final deadLeft = _cameraX + screenW * EscolaVisual.deadZoneEsquerda;
+    final deadRight = _cameraX + screenW * (1.0 - EscolaVisual.deadZoneDireita);
+    final jogX = _jogador.position.x + _jogador.size.x / 2;
+
+    if (jogX < deadLeft) {
+      _cameraX = jogX - screenW * EscolaVisual.deadZoneEsquerda;
+    } else if (jogX > deadRight) {
+      _cameraX = jogX - screenW * (1.0 - EscolaVisual.deadZoneDireita);
+    }
+
+    _cameraX = _cameraX.clamp(0.0, mundo - screenW);
     _aplicarCamera();
   }
 
-  /// Aplica _cameraX ao viewfinder (sem usar follow/snap do Flame).
   void _aplicarCamera() {
-    final screenW = game.size.x;
-    final screenH = game.size.y;
-
-    // O viewfinder.position é o ponto do MUNDO que aparece no centro da tela
-    // (porque viewfinder.anchor = Anchor.center).
     game.camera.viewfinder.position = Vector2(
-      _cameraX + screenW / 2,
-      screenH / 2,
+      _cameraX + game.size.x / 2,
+      game.size.y / 2,
     );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
+  // Limpeza
+  // ─────────────────────────────────────────────────────────────────────────
+
   @override
   void onRemove() {
     super.onRemove();
+    _painel.removeFromParent();
     game.camera.stop();
     _world.removeAll(_world.children.toList());
   }
 
+  // ── ESC ───────────────────────────────────────────────────────────────────
+
   @override
   bool onKeyEvent(KeyEvent event, Set<LogicalKeyboardKey> keysPressed) {
+    if (event is! KeyDownEvent) return false;
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      if (_desafioAberto) {
+        _painel.fechar();
+        _desafioAberto = false;
+        return true;
+      }
+      onMenu?.call();
+      return true;
+    }
     return false;
   }
 }

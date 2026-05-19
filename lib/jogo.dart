@@ -40,6 +40,7 @@ class JogoCasa extends FlameGame with HasKeyboardHandlerComponents {
       personagem: personagem,
       onGameOver: _aoGameOver,
       onConcluida: _aoVencer,
+      onMenu: _mostrarMenu,
     );
     _fase = fase;
     add(fase);

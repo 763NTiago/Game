@@ -1,114 +1,74 @@
 import 'package:flutter/material.dart';
 
-/// Ajuste cores, textos e posições do menu aqui.
+/// Constantes visuais do menu — tema "Quadro de Avisos de Cortiça".
+///
+/// Mude aqui para ajustar cores, tamanhos e textos sem tocar na lógica.
 class MenuVisual {
   const MenuVisual._();
 
   // ─────────────────────────────────────────────
-  // Cores gerais
+  // Cortiça
   // ─────────────────────────────────────────────
 
-  static const corFundo = Color(0xFF0D1B2A); // azul-marinho escuro
-  static const corFundoGradienteBase = Color(0xFF1B2838);
-  static const corMolduraSelecao = Color(0xFFFFEB3B);
-  static const corTitulo = Colors.white;
-  static const corNomePersonagem = Colors.white;
-  static const corInstrucoes = Colors.white70;
+  /// Cor base da cortiça.
+  static const corCorticaBase = Color(0xFFC4864A);
 
   // ─────────────────────────────────────────────
-  // Textos
+  // Moldura de madeira
   // ─────────────────────────────────────────────
 
-  static const titulo = '🏫  Aventura na Escola';
-  static const subtitulo = 'Escolha sua personagem';
-  static const instrucoes =
+  static const corMoldura = Color(0xFF6D4C41);
+  static const corMolduraEscura = Color(0xFF4E342E);
+
+  // ─────────────────────────────────────────────
+  // Banner do título
+  // ─────────────────────────────────────────────
+
+  static const corBannerFundo = Color(0xFFE53935);
+
+  /// Listras do banner (decoração tipo festa junina).
+  static const coresBannerListras = [
+    Color(0x22FFFFFF), // branco semitransparente
+    Color(0x00000000), // transparente
+    Color(0x22FFFFFF),
+    Color(0x00000000),
+    Color(0x22FFFFFF),
+    Color(0x00000000),
+  ];
+
+  // ─────────────────────────────────────────────
+  // Subtítulo
+  // ─────────────────────────────────────────────
+
+  static const corSubtituloBg = Color(0xFFFFF9C4);
+  static const corSubtituloTexto = Color(0xFF5D4037);
+
+  // ─────────────────────────────────────────────
+  // Seleção
+  // ─────────────────────────────────────────────
+
+  /// Cor do contorno e do badge do Polaroid selecionado.
+  static const corSelecao = Color(0xFFFFEB3B);
+
+  // ─────────────────────────────────────────────
+  // Alfinetes decorativos
+  // ─────────────────────────────────────────────
+
+  /// Pool de cores para os alfinetes espalhados pelo quadro.
+  static const coresAlfinetes = [
+    Color(0xFFE53935), // vermelho
+    Color(0xFF1E88E5), // azul
+    Color(0xFF43A047), // verde
+    Color(0xFFFFB300), // âmbar
+    Color(0xFF8E24AA), // roxo
+    Color(0xFF00ACC1), // ciano
+    Color(0xFFF4511E), // laranja
+  ];
+
+  // ─────────────────────────────────────────────
+  // Textos / conteúdo
+  // ─────────────────────────────────────────────
+
+  static const textoInstrucoes =
       '← → ou A / D  —  escolher       Enter ou Espaço  —  jogar';
-
-  // ─────────────────────────────────────────────
-  // Preview dos personagens
-  // ─────────────────────────────────────────────
-
-  /// Altura do personagem no menu.
-  static const alturaPreviewMenu = 100.0;
-  static const espessuraMoldura = 4.0;
-  static const paddingMoldura = 28.0;
-  static const raioMoldura = 16.0;
-
-  static const tituloY = 36.0;
-  static const subtituloY = 82.0;
-  static const previewCentroY = 0.42;
-  static const previewOffsetX = 0.22;
-  static const nomeAbaixoPreview = 18.0;
-  static const instrucoesY = 32.0;
-
-  static const opacidadeNaoSelecionado = 0.35;
-
-  // ─────────────────────────────────────────────
-  // Card de fase (preview da fase no rodapé do menu)
-  // ─────────────────────────────────────────────
-
-  /// Altura do thumbnail do fundo da fase dentro do card.
-  static const alturaThumbFase = 90.0;
-
-  /// Largura total do card de fase.
-  static const larguraCardFase = 500.0;
-
-  /// Altura total do card de fase.
-  static const alturaCardFase = 110.0;
-
-  /// Cor de fundo do card.
-  static const corCardFundo = Color(0xFF1A2744);
-
-  /// Cor da borda do card.
-  static const corCardBorda = Color(0xFF3D5AFE);
-
-  /// Cor do título da fase.
-  static const corTituloFase = Color(0xFFFFEB3B);
-
-  /// Cor da descrição da fase.
-  static const corDescFase = Colors.white70;
-
-  // ─────────────────────────────────────────────
-  // Estilos de texto
-  // ─────────────────────────────────────────────
-
-  static const estiloTitulo = TextStyle(
-    color: corTitulo,
-    fontSize: 32,
-    fontWeight: FontWeight.bold,
-    letterSpacing: 1.2,
-    shadows: [Shadow(color: Color(0xFF3D5AFE), blurRadius: 18)],
-  );
-
-  static const estiloSubtitulo = TextStyle(
-    color: Color(0xFFB0BEC5),
-    fontSize: 17,
-    letterSpacing: 0.5,
-  );
-
-  static const estiloNome = TextStyle(
-    color: corNomePersonagem,
-    fontSize: 20,
-    fontWeight: FontWeight.w600,
-    letterSpacing: 0.3,
-  );
-
-  static const estiloInstrucoes = TextStyle(
-    color: corInstrucoes,
-    fontSize: 15,
-    height: 1.4,
-    letterSpacing: 0.2,
-  );
-
-  static const estiloTituloFase = TextStyle(
-    color: corTituloFase,
-    fontSize: 16,
-    fontWeight: FontWeight.bold,
-  );
-
-  static const estiloDescFase = TextStyle(
-    color: corDescFase,
-    fontSize: 13,
-    height: 1.4,
-  );
 }
