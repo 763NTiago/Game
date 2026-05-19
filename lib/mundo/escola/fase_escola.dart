@@ -2,9 +2,9 @@ import 'dart:math';
 
 import 'package:flame/components.dart';
 import 'package:flame/game.dart';
-import 'package:flame/text.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:meu_jogo/jogador/camera.dart';
 import 'package:meu_jogo/jogador/jogador.dart';
 import 'package:meu_jogo/jogador/personagem.dart';
 import 'package:meu_jogo/mundo/chao.dart';
@@ -20,10 +20,15 @@ import 'package:meu_jogo/mundo/estrela_animada.dart';
 /// Fase escola completa:
 /// - 5 portas com desafios aleatórios para 4–6 anos
 /// - Mesas, inimigos e buracos em posições aleatórias
-/// - 5 vidas — perde ao tocar inimigo
+/// - 5 vidas — perde ao tocar inimigo ou buraco
 /// - Estrelas animadas ao completar porta
 /// - HUD com vidas e pontos
 /// - Game over ao zerar vidas
+///
+/// Arquitetura Flame 1.37 (API nova):
+///   Objetos de cena  → game.world
+///   HUD e painel     → game.camera.viewport (fixo na tela)
+///   Câmera           → CameraJogador adicionado ao game
 class FaseEscola extends Component
     with HasGameReference<FlameGame>, KeyboardHandler {
   FaseEscola({
@@ -40,6 +45,7 @@ class FaseEscola extends Component
 
   // Componentes principais
   late Jogador _jogador;
+  late CameraJogador _camera;
   late PainelDesafio _painel;
   late Hud _hud;
   late double _topoChao;
@@ -58,9 +64,22 @@ class FaseEscola extends Component
   String? _feedbackMsg;
   double _tempoFeedback = 0;
 
+  /// Evita que o painel abra no primeiro frame antes do jogador se mover.
+  bool _painelAtivavel = false;
+
   static const _duracaoInvencivel = 2.0;
   static const _duracaoFeedback = 2.5;
   static const _pontoPorPorta = 100;
+
+  // ─────────────────────────────────────────────
+  // Atalho: world onde vivem os objetos da fase
+  // ─────────────────────────────────────────────
+
+  World get _world => game.world;
+
+  // ─────────────────────────────────────────────
+  // Carregamento
+  // ─────────────────────────────────────────────
 
   @override
   Future<void> onLoad() async {
@@ -80,7 +99,7 @@ class FaseEscola extends Component
   }
 
   // ─────────────────────────────────────────────
-  // Montagem da cena
+  // Montagem — objetos de cena vão para _world
   // ─────────────────────────────────────────────
 
   Future<void> _montarFundo() async {
@@ -92,7 +111,7 @@ class FaseEscola extends Component
 
       var x = 0.0;
       while (x < EscolaVisual.larguraMundo) {
-        await add(
+        await _world.add(
           SpriteComponent(
             sprite: Sprite(image),
             size: Vector2(largImg, h),
@@ -103,13 +122,13 @@ class FaseEscola extends Component
         x += largImg;
       }
     } catch (_) {
-      await add(
+      await _world.add(
         RectangleComponent(
           size: Vector2(EscolaVisual.larguraMundo, h * 0.6),
           paint: Paint()..color = const Color(EscolaVisual.corFundoFallback),
         ),
       );
-      await add(
+      await _world.add(
         RectangleComponent(
           position: Vector2(0, h * 0.6),
           size: Vector2(EscolaVisual.larguraMundo, h * 0.4),
@@ -125,7 +144,7 @@ class FaseEscola extends Component
       largura: EscolaVisual.larguraMundo,
       topoY: _topoChao,
     );
-    await add(_chao);
+    await _world.add(_chao);
   }
 
   Future<void> _montarPortas(int seed) async {
@@ -139,7 +158,7 @@ class FaseEscola extends Component
         onInteragir: _abrirDesafio,
       )..position = Vector2(EscolaVisual.portasPosicaoX[i], _topoChao);
       _portas.add(porta);
-      await add(porta);
+      await _world.add(porta);
     }
   }
 
@@ -150,7 +169,7 @@ class FaseEscola extends Component
       final qtd = (i % 3) + 1;
       for (var j = 0; j < qtd; j++) {
         final yPos = _topoChao - (EscolaVisual.alturaMesa * j);
-        await add(ObjetoCenario.mesa(position: Vector2(x, yPos)));
+        await _world.add(ObjetoCenario.mesa(position: Vector2(x, yPos)));
       }
     }
   }
@@ -160,7 +179,7 @@ class FaseEscola extends Component
     for (final x in posicoes) {
       final buraco = ObjetoCenario.buraco(position: Vector2(x, _topoChao));
       _buracos.add(buraco as ObjetoCenario);
-      await add(buraco);
+      await _world.add(buraco);
     }
   }
 
@@ -181,7 +200,7 @@ class FaseEscola extends Component
         ),
       );
       _inimigos.add(inimigo);
-      await add(inimigo);
+      await _world.add(inimigo);
     }
   }
 
@@ -191,7 +210,11 @@ class FaseEscola extends Component
       chao: _chao,
       limiteMundoX: EscolaVisual.larguraMundo,
     );
-    await add(_jogador);
+
+    // await _world.add espera o onLoad completo — size.y já existe depois disso
+    await _world.add(_jogador);
+
+    // Posição inicial correta da fase (sobrescreve o padrão do Jogador)
     _jogador.position = Vector2(
       EscolaVisual.inicioJogadorX,
       _topoChao - _jogador.size.y,
@@ -199,18 +222,44 @@ class FaseEscola extends Component
   }
 
   Future<void> _montarHud() async {
+    // HUD vai na viewport da câmera — fica fixo na tela, não se move com o world
     _hud = Hud(vidas: _vidas, pontos: _pontos);
-    await add(_hud);
+    await game.camera.viewport.add(_hud);
   }
 
   Future<void> _montarPainel() async {
+    // Painel também fica na viewport — overlay fixo de tela
     _painel = PainelDesafio(onResposta: _aoResponder);
-    await add(_painel);
+    await game.camera.viewport.add(_painel);
   }
 
   Future<void> _configurarCamera() async {
-    game.camera.viewfinder.anchor = Anchor.center;
-    game.camera.follow(_jogador);
+    _camera = CameraJogador(
+      jogador: _jogador,
+      larguraMundo: EscolaVisual.larguraMundo,
+      alturaTela: game.size.y,
+    );
+    await game.add(_camera);
+
+    // Aguarda meio segundo antes de ativar portas — evita abertura acidental
+    Future.delayed(const Duration(milliseconds: 500), () {
+      _painelAtivavel = true;
+    });
+  }
+
+  // ─────────────────────────────────────────────
+  // Limpeza ao remover a fase
+  // ─────────────────────────────────────────────
+
+  @override
+  void onRemove() {
+    super.onRemove();
+    // Remove componentes adicionados fora desta árvore
+    _hud.removeFromParent();
+    _painel.removeFromParent();
+    _camera.removeFromParent();
+    // Limpa todos os objetos do world
+    _world.removeAll(_world.children.toList());
   }
 
   // ─────────────────────────────────────────────
@@ -286,7 +335,7 @@ class FaseEscola extends Component
         posicaoPorta.y - EscolaVisual.alturaPorta - 20,
       ),
     );
-    await add(estrela);
+    await _world.add(estrela);
   }
 
   // ─────────────────────────────────────────────
@@ -306,9 +355,6 @@ class FaseEscola extends Component
   void update(double dt) {
     super.update(dt);
 
-    // CORRIGIDO: só sai cedo se encerrada E não há vidas (game over ativo).
-    // Antes o guard "if (_encerrada && _vidas > 0) return" pulava o update
-    // inteiro durante a vitória, impedindo o painel de fechar corretamente.
     if (_encerrada) return;
 
     _jogador.pausado = _painel.aberto;
@@ -352,7 +398,7 @@ class FaseEscola extends Component
       }
     }
 
-    // Colisão com buracos
+    // Colisão com buracos — teleporta ao início
     for (final buraco in _buracos) {
       if (buraco.contemPonto(centroJogador)) {
         _levarDano();
@@ -361,12 +407,13 @@ class FaseEscola extends Component
             EscolaVisual.inicioJogadorX,
             _topoChao - _jogador.size.y,
           );
+          _camera.snapParaJogador();
         }
       }
     }
 
-    // Interação automática com porta próxima
-    final portaProxima = _portaProxima();
+    // Interação com porta próxima — só após 500 ms do início
+    final portaProxima = _painelAtivavel ? _portaProxima() : null;
     if (portaProxima != null && !_painel.aberto) {
       _abrirDesafio(portaProxima);
     }
@@ -381,7 +428,7 @@ class FaseEscola extends Component
   }
 
   // ─────────────────────────────────────────────
-  // Render — feedback flutuante
+  // Render — feedback flutuante (coordenadas de tela)
   // ─────────────────────────────────────────────
 
   @override
@@ -407,12 +454,12 @@ class FaseEscola extends Component
   }
 
   // ─────────────────────────────────────────────
-  // Teclado — tecla E abre porta
+  // Teclado — tecla E abre porta manualmente
   // ─────────────────────────────────────────────
 
   @override
   bool onKeyEvent(KeyEvent event, Set<LogicalKeyboardKey> keysPressed) {
-    if (_painel.aberto) return false;
+    if (_painel.aberto || !_painelAtivavel) return false;
     if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.keyE) {
       final porta = _portaProxima();
       if (porta != null) {
